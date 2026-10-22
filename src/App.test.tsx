@@ -2,7 +2,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import App from './App';
+import App from './DemoApp';
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('응답을 기다리는 동안 중복 실행을 막고 모의 응답을 구별한다', async () => {
   let resolve!: (value: Response) => void;
