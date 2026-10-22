@@ -2,13 +2,17 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useSpeech } from './useSpeech';
 import { useRecorder } from './useRecorder';
 import './chat.css';
+import ExpressionTools from './ExpressionTools';
 
-const SCENARIO_ID = 'cafe-order';
+import { scenarios, type Scenario } from './scenarios';
 
 type Suggestion = { keywords: string[]; sentence: string; expanded: boolean };
 
 type Message = { id: string; text: string; role: 'assistant' | 'user'; revision?: number; mode?: 'mock' | 'live' };
-export default function ChatRoom() {
+export default function ChatRoom({ scenario = scenarios[0], autoStart = false, onExit = () => { window.location.hash = '#home'; } }: { scenario?: Scenario; autoStart?: boolean; onExit?: () => void }) {
+  const SCENARIO_ID = scenario.id;
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  const [vocabularyOpen, setVocabularyOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<Record<string, Suggestion>>({});
   const [suggesting, setSuggesting] = useState(false);
   const [suggestionError, setSuggestionError] = useState('');
@@ -47,9 +51,14 @@ export default function ChatRoom() {
   const request = useRef<AbortController | null>(null);
   const { playback, speechError, speak, stop } = useSpeech();
   useEffect(() => () => { request.current?.abort(); request.current = null; suggestionRequest.current?.abort(); suggestionRequest.current = null; }, []);
+  useEffect(() => {
+    let active = true;
+    if (autoStart) queueMicrotask(() => { if (active) start(); });
+    return () => { active = false; };
+  }, []);
   function start() {
     if (request.current) return;
-    cancelSuggestion(); setSuggestions({});
+    cancelSuggestion(); setSuggestions({}); setSessionId(crypto.randomUUID());
     microphone.reset(); setMessages([]); setRevealed([]); setEditingId(null); setLockedUserId(null);
     void generate([]);
   }
@@ -116,24 +125,25 @@ export default function ChatRoom() {
     }
   }
   const playing = playback === 'speaking' || playback === 'queued';
-  const status = editingId ? '말씀하려던 영어 문장으로 수정해주세요' : microphone.state === 'recording' ? `녹음 중 · ${microphone.seconds}초 / 30초` : microphone.state === 'requesting' ? '마이크 권한을 확인하고 있어요' : microphone.state === 'transcribing' ? '말씀하신 내용을 글로 옮기고 있어요' : loading ? (messages.length ? '다음 답변을 준비하고 있어요' : '첫 인사를 준비하고 있어요') : waitingReply ? '답변 생성을 다시 시도해주세요' : playback === 'speaking' ? '바리스타가 말하고 있어요'
+  const status = editingId ? '말씀하려던 영어 문장으로 수정해주세요' : microphone.state === 'recording' ? `녹음 중 · ${microphone.seconds}초 / 30초` : microphone.state === 'requesting' ? '마이크 권한을 확인하고 있어요' : microphone.state === 'transcribing' ? '말씀하신 내용을 글로 옮기고 있어요' : loading ? (messages.length ? '다음 답변을 준비하고 있어요' : '첫 인사를 준비하고 있어요') : waitingReply ? '답변 생성을 다시 시도해주세요' : playback === 'speaking' ? `${scenario.partner}가 말하고 있어요`
     : playback === 'queued' ? '음성을 준비하고 있어요' : message ? '마이크를 눌러 영어로 답해보세요' : '준비되면 대화를 시작해보세요';
   return <div className="chat-shell">
+    <ExpressionTools sessionId={sessionId} scenarioId={SCENARIO_ID} open={vocabularyOpen} onClose={() => setVocabularyOpen(false)} />
     <aside className="chat-sidebar">
-      <a className="wordmark" href="#chat">Say<span>Scene</span><i>●</i></a>
+      <a className="wordmark" href="#home" onClick={event => { event.preventDefault(); onExit(); }}>Say<span>Scene</span><i>●</i></a>
       <div className="sidebar-label">오늘의 대화</div>
-      <div className="current-scene"><span aria-hidden="true">☕</span><div>카페에서 주문하기<small>일상 · 첫 번째 장면</small></div><span className="active-dot" /></div>
-      <div className="scene-guide"><span className="eyebrow">YOUR SCENE</span><h2>커피 한 잔으로<br/>시작하는 영어.</h2><p>카페에 막 들어왔어요.<br/>바리스타의 첫 인사를 듣고<br/>영어의 리듬을 느껴보세요.</p><div className="guide-tags"><span>카페</span><span>음료 주문</span></div></div>
+      <div className="current-scene"><span aria-hidden="true">{scenario.emoji}</span><div>{scenario.title}<small>{scenario.place} · 영어 연습</small></div><span className="active-dot" /></div>
+      <div className="scene-guide"><span className="eyebrow">YOUR SCENE</span><h2>{scenario.title}</h2><p>상황에 맞춰 대화해 보세요.<br/>상대방의 첫 인사를 듣고<br/>영어로 답해보세요.</p><div className="guide-tags"><span>{scenario.place}</span><span>{scenario.situation}</span></div></div>
       <div className="sidebar-bottom"><img src="/sayscene-logo.png" alt="SayScene 말풍선 친구"/><p>완벽하지 않아도 괜찮아요.<br/>한 장면씩, 나만의 속도로.</p><a href="#demo">연결 확인 화면 ↗</a></div>
     </aside>
     <div className="chat-room">
-      <header className="chat-header"><div className="chat-title"><span className="header-cup" aria-hidden="true">☕</span><div><p>카페 · 음료 주문</p><h1>카페에서 주문하기</h1></div></div><a href="#demo" className="mobile-demo">연결 확인 ↗</a><div className="chat-menu"><button className="menu-toggle" aria-label="대화 메뉴" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>•••</button>{menuOpen && <div className="menu-panel"><button disabled title="준비 중">단어장</button><button disabled title="준비 중">대화 종료</button><small>버튼 준비 중</small></div>}</div></header>
+      <header className="chat-header"><div className="chat-title"><span className="header-cup" aria-hidden="true">{scenario.emoji}</span><div><p>{scenario.place} · {scenario.situation}</p><h1>{scenario.title}</h1></div></div><a href="#demo" className="mobile-demo">연결 확인 ↗</a><div className="chat-menu"><button className="menu-toggle" aria-label="대화 메뉴" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>•••</button>{menuOpen && <div className="menu-panel"><button onClick={() => { setMenuOpen(false); setVocabularyOpen(true); }}>단어장</button><button onClick={onExit}>대화 종료</button></div>}</div></header>
       <div className="chat-timeline" role="region" aria-label="대화 내용" aria-busy={loading}>
         <div className="scene-divider"><span>오늘, 새로운 장면의 시작</span></div>
-        <div className="scene-banner"><span aria-hidden="true">✦</span><p>편안하게 들어보세요.<br/><strong>영어 원문은 말풍선을 누르면 볼 수 있어요.</strong></p></div>
-        {!message && !loading && !error && <div className="chat-welcome"><div className="welcome-cup" aria-hidden="true">☕</div><h2>어서 오세요, SayScene Café.</h2><p>준비되셨나요?<br/>바리스타가 먼저 말을 걸어줄 거예요.</p></div>}
+        <div className="scene-banner"><span aria-hidden="true">✦</span><p>편안하게 들어보세요.<br/><strong>원문을 열고 표현을 드래그하면 저장할 수 있어요.</strong></p></div>
+        {!message && !loading && !error && <div className="chat-welcome"><div className="welcome-cup" aria-hidden="true">{scenario.emoji}</div><h2>{scenario.title}</h2><p>준비되셨나요?<br/>상대방이 먼저 말을 걸어줄 거예요.</p></div>}
 
-        {messages.map(message => message.role === 'assistant' ? (<Fragment key={message.id}><article className="chat-message"><div className="barista-avatar" aria-hidden="true">☕</div><div className="message-body"><span className="chat-speaker">SayScene <small>바리스타</small></span><div className="chat-bubble">{revealed.includes(message.id) ? <p lang="en">{message.text}</p> : <button className="chat-reveal" onClick={() => setRevealed(ids => [...ids, message.id])} aria-label="영어 원문 보기"><span className="hidden-sentence" aria-hidden="true">A little hello, just for you.<br/>Your scene begins here.</span><span className="reveal-hint">원문 보기 ↗</span></button>}</div><div className="message-actions"><button disabled={recordingBusy || loading || !!editingId} onClick={() => playing ? stop() : speak(message.text)}>{playing ? '재생 중지' : '다시 듣기'}</button><span>{revealed.includes(message.id) ? '영어 원문' : '먼저 귀 기울여 들어보세요'}</span>{revealed.includes(message.id) && <button disabled title="준비 중">한글 번역</button>}<button disabled title="준비 중">표현 저장</button></div>{message.mode === 'mock' && <p className="chat-mock">모의 응답 · 실제 LLM이 생성한 문장이 아닙니다</p>}</div></article>{suggestions[message.id] && <aside className="suggestion-card" aria-label="답변 연습 힌트">
+        {messages.map(message => message.role === 'assistant' ? (<Fragment key={message.id}><article className="chat-message"><div className="barista-avatar" aria-hidden="true">{scenario.emoji}</div><div className="message-body"><span className="chat-speaker">SayScene <small>{scenario.partner}</small></span><div className="chat-bubble">{revealed.includes(message.id) ? <p lang="en" data-expression-id={message.id} data-revision={message.revision ?? 1} data-role={message.role}>{message.text}</p> : <button className="chat-reveal" onClick={() => setRevealed(ids => [...ids, message.id])} aria-label="영어 원문 보기"><span className="hidden-sentence" aria-hidden="true">A little hello, just for you.<br/>Your scene begins here.</span><span className="reveal-hint">원문 보기 ↗</span></button>}</div><div className="message-actions"><button disabled={recordingBusy || loading || !!editingId} onClick={() => playing ? stop() : speak(message.text)}>{playing ? '재생 중지' : '다시 듣기'}</button><span>{revealed.includes(message.id) ? '영어 원문' : '먼저 귀 기울여 들어보세요'}</span>{revealed.includes(message.id) && <button disabled title="준비 중">한글 번역</button>}</div>{message.mode === 'mock' && <p className="chat-mock">모의 응답 · 실제 LLM이 생성한 문장이 아닙니다</p>}</div></article>{suggestions[message.id] && <aside className="suggestion-card" aria-label="답변 연습 힌트">
           <strong>✦ {suggestions[message.id].expanded ? '추천 예문' : '추천 키워드'}</strong>
           <div className="suggestion-keywords">{suggestions[message.id].keywords.map((word, i) => <span lang="en" key={i}>{word}</span>)}</div>
           {suggestions[message.id].expanded && <p lang="en">{suggestions[message.id].sentence}</p>}
@@ -144,8 +154,8 @@ export default function ChatRoom() {
           <textarea id="edit-utterance" lang="en" autoFocus rows={3} value={editText} onChange={event => setEditText(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setEditingId(null); }} />
           <p>저장하면 이 발화에 대한 AI 답변을 다시 생성해요.</p>
           <div><button type="submit" disabled={!editText.trim()}>수정 완료</button><button type="button" onClick={() => setEditingId(null)}>취소</button></div>
-        </form> : <div className="chat-bubble"><p lang="en">{message.text}</p></div>}<div className="message-actions"><button disabled title="준비 중">다시 듣기</button><button disabled title="준비 중">한글 번역</button>{message.id === lastUser?.id && message.id !== lockedUserId && !editingId && <button disabled={loading || recordingBusy} onClick={() => edit(message)}>수정하기</button>}<button disabled title="준비 중">표현 저장</button></div></div></article>))}
-        {loading && <div className="chat-message"><div className="barista-avatar" aria-hidden="true">☕</div><div><span className="chat-speaker">SayScene <small>바리스타</small></span><div className="chat-loading" role="status">{messages.length ? '다음 답변을 준비하고 있어요' : '첫 인사를 준비하고 있어요'} <span>···</span></div></div></div>}
+        </form> : <div className="chat-bubble"><p lang="en" data-expression-id={message.id} data-revision={message.revision ?? 1} data-role={message.role}>{message.text}</p></div>}<div className="message-actions"><button disabled title="준비 중">다시 듣기</button><button disabled title="준비 중">한글 번역</button>{message.id === lastUser?.id && message.id !== lockedUserId && !editingId && <button disabled={loading || recordingBusy} onClick={() => edit(message)}>수정하기</button>}</div></div></article>))}
+        {loading && <div className="chat-message"><div className="barista-avatar" aria-hidden="true">{scenario.emoji}</div><div><span className="chat-speaker">SayScene <small>{scenario.partner}</small></span><div className="chat-loading" role="status">{messages.length ? '다음 답변을 준비하고 있어요' : '첫 인사를 준비하고 있어요'} <span>···</span></div></div></div>}
         {message && !waitingReply && !loading && <div className="user-pending">{!suggestions[message.id] && <button className="suggestion-placeholder" disabled={suggesting || playing || recordingBusy || !!editingId} onClick={suggest}>{suggesting ? '추천을 준비하고 있어요…' : '답변 추천 ✦'}</button>}{suggestionError && <p role="alert">{suggestionError}</p>}{recordingBusy && <div className="recording-bubble" role="status">{microphone.state === 'recording' ? '● 입력 중…' : microphone.state === 'transcribing' ? '음성을 글로 옮기는 중…' : '마이크 연결 중…'}</div>}</div>}
 
         {microphone.error && <div className="chat-error" role="alert">{microphone.error}</div>}

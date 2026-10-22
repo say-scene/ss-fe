@@ -22,3 +22,18 @@
 .suggestion-card small { display: block; font-size: 11px; margin-top: 10px; }
 .suggestion-card button { border: 1px solid #c0a6e8; border-radius: 8px; padding: 8px 12px; background: #fff; color: #543077; cursor: pointer; }
 .suggestion-card button:disabled { opacity: .5; cursor: not-allowed; }
+
+[data-expression-id] { user-select: text; -webkit-user-select: text; }
+.expression-popover { position: fixed; z-index: 30; width: 128px; padding: 4px; border: 1px solid #d8e3f2; border-radius: 10px; background: #fff; box-shadow: 0 5px 20px #24335124; }
+.expression-popover button { width: 100%; min-height: 36px; padding: 8px 4px; border: 0; border-radius: 6px; background: #fff; color: #205ba8; font-size: 13px; cursor: pointer; }
+.expression-popover button:hover { background: #edf5ff; }
+.expression-popover button:focus-visible { outline: 2px solid #2178e4; }
+.expression-notice { position: fixed; z-index: 40; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 12px 20px; border-radius: 10px; background: #243351; color: #fff; font-size: 13px; }
+.vocabulary-dialog { width: min(560px, calc(100vw - 32px)); max-height: 80dvh; box-sizing: border-box; padding: 24px; border: 1px solid #d8e3f2; border-radius: 20px; color: #243351; }
+.vocabulary-dialog::backdrop { background: #18294366; }
+.vocabulary-dialog header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.vocabulary-dialog h2 { margin: 0; font-size: 20px; }
+.vocabulary-dialog p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.vocabulary-dialog ul { padding: 0; list-style: none; }
+.vocabulary-dialog li { border-top: 1px solid #e3ebf6; padding: 18px 0; overflow-wrap: anywhere; }
+.vocabulary-dialog button,.vocabulary-dialog select { padding: 8px 12px; border: 1px solid #d8e3f2; border-radius: 8px; background: #fff; color: #42658d; cursor: pointer; }
