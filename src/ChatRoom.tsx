@@ -11,7 +11,7 @@ import { scenarios, type Scenario } from './scenarios';
 
 type Suggestion = { keywords: string[]; sentence: string; expanded: boolean };
 
-type Message = { id: string; text: string; role: 'assistant' | 'user'; revision?: number; mode?: 'mock' | 'live' };
+type Message = { id: string; text: string; role: 'assistant' | 'user'; revision?: number; mode?: 'mock' | 'live' | 'preset' };
 type Managed = { local: LocalConversation; generate: (history: Message[]) => Promise<Message[]>; saveUi: (ui: ConversationUi) => void;
   registerCleanup: (cleanup: (() => void) | null) => void; restart: () => void };
 export default function ChatRoom({ managed, scenario = scenarios[0], autoStart = false, onEnd, onExit = () => { window.location.hash = '#home'; } }: { scenario?: Scenario; autoStart?: boolean; onExit?: () => void; onEnd?: (snapshot: ReportSnapshot) => void; managed?: Managed }) {
