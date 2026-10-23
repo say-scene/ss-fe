@@ -38,10 +38,12 @@ jobs:
         run: |
           aws s3 sync dist/ s3://${{ vars.S3_BUCKET }}/ \
             --exclude index.html \
-            --cache-control "public,max-age=31536000,immutable"
+            --cache-control "public,max-age=31536000,immutable" \
+            --metadata "commit=${{ github.sha }},run=${{ github.run_id }}"
 
       - name: index.html 업로드 (캐시 금지)
         if: github.ref == 'refs/heads/main'
         run: |
           aws s3 cp dist/index.html s3://${{ vars.S3_BUCKET }}/index.html \
-            --cache-control "no-cache"
+            --cache-control "no-cache" \
+            --metadata "commit=${{ github.sha }},run=${{ github.run_id }}"
