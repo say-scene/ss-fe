@@ -182,3 +182,21 @@ it('추천 실패 후 재시도 가능하고 마이크도 사용할 수 있다',
   fireEvent.click(screen.getByRole('button', { name: '답변 추천 ✦' }));
   expect(await screen.findByText('would like')).toBeInTheDocument();
 });
+
+it('사용자 다시 듣기는 현재 표시된 수정 발화를 TTS로 재생한다', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(reply('Welcome!')).mockResolvedValueOnce(reply('A latte?')).mockResolvedValueOnce(reply('Tea?')));
+  render(<ChatRoom />);
+  fireEvent.click(screen.getByText('대화 시작하기'));
+  await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
+  act(() => mocks.transcript('A latte.'));
+  await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
+  const userButton = () => screen.getByText(/음성 인식 결과|수정한 발화/).closest('article')!.querySelector<HTMLButtonElement>('.message-actions button')!;
+  fireEvent.click(userButton());
+  expect(mocks.speak).toHaveBeenLastCalledWith('A latte.');
+  fireEvent.click(screen.getByText('수정하기'));
+  fireEvent.change(screen.getByLabelText('발화 수정'), { target: { value: 'Tea, please.' } });
+  fireEvent.click(screen.getByText('수정 완료'));
+  await waitFor(() => expect(mocks.speak).toHaveBeenLastCalledWith('Tea?'));
+  fireEvent.click(userButton());
+  expect(mocks.speak).toHaveBeenLastCalledWith('Tea, please.');
+});

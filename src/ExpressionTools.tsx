@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { deleteExpression, readExpressions, saveExpression, VOCAB_KEY, type Expression } from './vocabulary';
+import { deleteExpression, expressionKey, lookupExpression, readExpressions, saveExpression, VOCAB_KEY, type Expression } from './vocabulary';
 
 type Pick = { text: string; example: string; element: HTMLElement; source: Expression['source']; x: number; y: number };
 export default function ExpressionTools({ sessionId, scenarioId, open, onClose }: {
@@ -10,6 +10,8 @@ export default function ExpressionTools({ sessionId, scenarioId, open, onClose }
   const [notice, setNotice] = useState('');
   const [saving, setSaving] = useState(false);
   const [items, setItems] = useState<Expression[]>([]);
+  const [lookingUp, setLookingUp] = useState<string[]>([]);
+  const [lookupErrors, setLookupErrors] = useState<Record<string, string>>({});
   const [listError, setListError] = useState('');
   const [sort, setSort] = useState('alphabet');
   const menu = useRef<HTMLDivElement>(null);
@@ -69,6 +71,13 @@ export default function ExpressionTools({ sessionId, scenarioId, open, onClose }
       window.removeEventListener('scroll', schedule, true); window.removeEventListener('resize', schedule);
     };
   }, [sessionId, scenarioId, open]);
+  async function lookup(id: string) {
+    setLookingUp(ids => [...ids, id]);
+    setLookupErrors(errors => ({ ...errors, [id]: '' }));
+    try { await lookupExpression(id); refresh(); }
+    catch { setLookupErrors(errors => ({ ...errors, [id]: '뜻을 불러오지 못했어요. 표현은 저장되어 있으니 다시 시도해주세요.' })); }
+    finally { setLookingUp(ids => ids.filter(value => value !== id)); }
+  }
   async function save() {
     if (!pick || busy.current) return;
     if (!pick.element.isConnected || pick.element.textContent !== pick.example
@@ -78,6 +87,10 @@ export default function ExpressionTools({ sessionId, scenarioId, open, onClose }
     busy.current = true; setSaving(true);
     try {
       const added = await saveExpression(pick.text, pick.example, pick.source);
+      if (added) {
+        const item = readExpressions().find(item => expressionKey(item.expression) === expressionKey(pick.text));
+        if (item) void lookup(item.id);
+      }
       setNotice(added ? '저장했습니다' : '이미 저장된 표현입니다'); setPick(null); window.getSelection()?.removeAllRanges();
     } catch { setNotice('저장하지 못했어요. 브라우저 저장 공간과 설정을 확인해주세요.'); }
     finally { busy.current = false; setSaving(false); }
@@ -96,7 +109,7 @@ export default function ExpressionTools({ sessionId, scenarioId, open, onClose }
       <header><h2 id="vocabulary-title">내 단어장</h2><button onClick={onClose} aria-label="단어장 닫기">닫기</button></header>
       <p>이 브라우저에 저장한 표현과 저장 당시 문장이에요.</p>
       <label>정렬 <select value={sort} onChange={event => setSort(event.target.value)}><option value="alphabet">알파벳순</option><option value="latest">최신순</option></select></label>
-      {listError ? <p role="alert">{listError}</p> : sorted.length ? <ul>{sorted.map(item => <li key={item.id}><strong lang="en">{item.expression}</strong><p lang="en">{item.example}</p><button onClick={() => remove(item.id)} aria-label={`${item.expression} 삭제`}>삭제</button></li>)}</ul> : <p>아직 저장한 표현이 없어요. 말풍선의 영어를 드래그해 보세요.</p>}
+      {listError ? <p role="alert">{listError}</p> : sorted.length ? <ul>{sorted.map(item => <li key={item.id}><strong lang="en">{item.expression}</strong>{item.details && <><small className="vocabulary-pos">{item.details.partOfSpeech}</small><p>{item.details.meaningKo}</p></>}<p lang="en">{item.example}</p>{item.details ? <p lang="ko" className="vocabulary-translation">{item.details.exampleKo}</p> : <><button disabled={lookingUp.includes(item.id)} onClick={() => lookup(item.id)}>{lookingUp.includes(item.id) ? '뜻을 불러오는 중…' : '뜻 불러오기'}</button>{lookupErrors[item.id] && <p role="alert">{lookupErrors[item.id]}</p>}</>}<button onClick={() => remove(item.id)} aria-label={`${item.expression} 삭제`}>삭제</button></li>)}</ul> : <p>아직 저장한 표현이 없어요. 말풍선의 영어를 드래그해 보세요.</p>}
     </dialog>
   </>;
 }

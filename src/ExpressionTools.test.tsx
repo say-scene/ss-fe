@@ -3,9 +3,10 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import ExpressionTools from './ExpressionTools';
-import { readExpressions, saveExpression, deleteExpression, VOCAB_KEY } from './vocabulary';
+import { lookupExpression, readExpressions, saveExpression, deleteExpression, VOCAB_KEY } from './vocabulary';
 const source = { sessionId: 'session', messageId: 'message', revision: 1, role: 'assistant', scenarioId: 'cafe-order' };
 beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('not configured')));
   const data = new Map<string, string>();
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => data.get(key) ?? null,
@@ -72,4 +73,49 @@ it('저장 목록을 다시 읽어도 유지되며 선택 항목만 삭제한다
   expect(readExpressions()).toEqual(saved);
   await deleteExpression(saved[0].id);
   expect(readExpressions().map(item => item.expression)).toEqual(['tea']);
+});
+
+const details = { meaningKo: '라테', partOfSpeech: '명사', exampleKo: '라테 한 잔 주세요.' };
+it('기존 저장 항목의 뜻을 조회하고 캐시하며 최초 원문과 출처를 유지한다', async () => {
+  await saveExpression('latte', 'A latte, please.', source);
+  const original = readExpressions()[0];
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...details, expression: 'latte', example: original.example })));
+  vi.stubGlobal('fetch', fetcher);
+  await lookupExpression(original.id);
+  await lookupExpression(original.id);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(readExpressions()[0]).toEqual({ ...original, details });
+  Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: vi.fn() });
+  render(<ExpressionTools sessionId="home" scenarioId="cafe-order" open={true} onClose={vi.fn()} />);
+  expect(await screen.findByText('명사')).toBeInTheDocument();
+  expect(screen.getByText('라테 한 잔 주세요.')).toBeInTheDocument();
+});
+it('조회 실패에도 표현을 유지하고 재시도할 수 있다', async () => {
+  await saveExpression('latte', 'A latte, please.', source);
+  const item = readExpressions()[0];
+  const fetcher = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(new Response(JSON.stringify({ ...details, expression: item.expression, example: item.example })));
+  vi.stubGlobal('fetch', fetcher);
+  await expect(lookupExpression(item.id)).rejects.toThrow();
+  expect(readExpressions()[0]).toEqual(item);
+  await lookupExpression(item.id);
+  expect(readExpressions()[0].details).toEqual(details);
+});
+it('조회 중 삭제한 표현을 늦은 응답이 되살리지 않는다', async () => {
+  await saveExpression('latte', 'A latte, please.', source);
+  const item = readExpressions()[0];
+  let finish!: (value: Response) => void;
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => { finish = resolve; })));
+  const pending = lookupExpression(item.id);
+  expect(lookupExpression(item.id)).toBe(pending);
+  await deleteExpression(item.id);
+  finish(new Response(JSON.stringify({ ...details, expression: item.expression, example: item.example })));
+  await pending;
+  expect(readExpressions()).toEqual([]);
+});
+it('잘못된 조회 응답은 저장하지 않는다', async () => {
+  await saveExpression('latte', 'A latte, please.', source);
+  const item = readExpressions()[0];
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ meaningKo: '라테', expression: item.expression, example: item.example }))));
+  await expect(lookupExpression(item.id)).rejects.toThrow();
+  expect(readExpressions()[0].details).toBeUndefined();
 });
