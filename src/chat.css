@@ -37,3 +37,9 @@
 .vocabulary-dialog ul { padding: 0; list-style: none; }
 .vocabulary-dialog li { border-top: 1px solid #e3ebf6; padding: 18px 0; overflow-wrap: anywhere; }
 .vocabulary-dialog button,.vocabulary-dialog select { padding: 8px 12px; border: 1px solid #d8e3f2; border-radius: 8px; background: #fff; color: #42658d; cursor: pointer; }
+
+.message-actions { flex-wrap: wrap; }
+.message-translation { display: contents; }
+.message-translation .translation-text, .message-translation [role="alert"] { flex-basis: 100%; margin: 6px 0 0; padding: 10px 12px; border-radius: 12px; background: #eef4fc; color: #344568; font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+
+.vocabulary-pos{display:inline-block;margin:8px 0 0;padding:2px 8px;border-radius:6px;background:#edf5ff;color:#315e98}.vocabulary-translation{color:#62748c}.vocabulary-dialog li button{margin-right:8px}
