@@ -1,4 +1,4 @@
-export type Message = { id: string; text: string; role: 'assistant' | 'user'; revision?: number; mode?: 'mock' | 'live' };
+export type Message = { id: string; text: string; role: 'assistant' | 'user'; revision?: number; mode?: 'mock' | 'live' | 'preset' };
 export type Turn = { sessionId: string; requestId: string; expectedVersion: number; message: Message | null; edit: boolean };
 export type Snapshot = { sessionId: string; scenarioId: string; version: number; messages: Message[]; lastRequestId: string | null; pending: { turn: Turn; expiresAt: number } | null };
 export type ConversationUi = { revealed: string[]; suggestions: Record<string, { keywords: string[]; sentence: string; expanded: boolean }>; lockedUserId: string | null };
