@@ -94,3 +94,42 @@ it('생성 중 나가기 후 늦은 응답이 화면을 바꾸지 않는다', as
   expect(screen.getByText('시작하기 →')).toBeInTheDocument();
   expect(screen.queryByText('대화 총평')).toBeNull();
 });
+it('AI 맥락은 항상 보이고 동일한 추천 문장은 Great만 표시한다', () => {
+  render(<NewReport report={{ ...report, turns: [{ ...report.turns[0], betterExpressionEn: ' A latte. ' }] }} onExit={vi.fn()} />);
+  expect(screen.getByText('Hi')).toBeVisible();
+  expect(screen.queryByText('앞선 AI 대화 보기')).not.toBeInTheDocument();
+  expect(screen.getByText('Great!')).toBeInTheDocument();
+  expect(screen.queryByText('더 자연스러운 표현')).not.toBeInTheDocument();
+  expect(screen.queryByText('좋아요.')).not.toBeInTheDocument();
+});
+it('상단을 유지하며 제목을 수정하고 확인 팝업에서 취소 또는 삭제한다', async () => {
+  await saveReport(report);
+  render(<ReportLibrary onExit={vi.fn()} />);
+  const dialog = screen.getByRole('dialog', { hidden: true }) as HTMLDialogElement;
+  dialog.showModal = () => dialog.setAttribute('open', '');
+  dialog.close = () => dialog.removeAttribute('open');
+  const heading = screen.getByRole('heading', { name: 'Report 다시보기' });
+  fireEvent.click(await screen.findByText(report.title));
+  expect(screen.getByRole('heading', { name: 'Report 다시보기' })).toBe(heading);
+  fireEvent.click(screen.getByRole('button', { name: '제목 수정' }));
+  fireEvent.change(screen.getByLabelText('리포트 제목'), { target: { value: '오늘의 카페' } });
+  fireEvent.click(screen.getByRole('button', { name: '수정 완료' }));
+  await screen.findByRole('heading', { name: '오늘의 카페' });
+  fireEvent.click(screen.getByRole('button', { name: '리포트 삭제' }));
+  expect(screen.getByRole('dialog')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '취소' }));
+  expect(readReports()).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: '리포트 삭제' }));
+  fireEvent.click(screen.getByRole('button', { name: /^삭제$/ }));
+  await screen.findByText('저장한 리포트가 없어요.');
+  expect(readReports()).toHaveLength(0);
+});
+it('Great 비율이 80% 이상일 때만 총평에 도장을 표시한다', () => {
+  const turns = Array.from({ length: 5 }, (_, i) => ({ ...report.turns[0], messageId: `u${i}`, betterExpressionEn: i < 4 ? report.turns[0].text : 'Another expression.' }));
+  const view = render(<NewReport report={{ ...report, turns }} onExit={vi.fn()} />);
+  expect(screen.getByAltText('Great! 전체 발화의 80% 이상이 추천 표현과 같아요.')).toBeInTheDocument();
+  view.rerender(<NewReport report={{ ...report, turns: turns.map((turn, i) => i === 3 ? { ...turn, betterExpressionEn: 'Different.' } : turn) }} onExit={vi.fn()} />);
+  expect(screen.queryByAltText('Great! 전체 발화의 80% 이상이 추천 표현과 같아요.')).not.toBeInTheDocument();
+  view.rerender(<NewReport report={{ ...report, turns: [] }} onExit={vi.fn()} />);
+  expect(screen.queryByAltText('Great! 전체 발화의 80% 이상이 추천 표현과 같아요.')).not.toBeInTheDocument();
+});

@@ -37,7 +37,9 @@ it('실패한 답변은 사용자 발화를 중복 추가하지 않고 같은 �
   render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole('button', { name: '새 인사 듣기' })).toBeInTheDocument();
   act(() => mocks.transcript('A latte, please.'));
+  expect(screen.queryByRole('button', { name: '새 인사 듣기' })).not.toBeInTheDocument();
   const retry = await screen.findByRole('button', { name: '답변 다시 받기' });
   expect(screen.getByRole('button', { name: '마이크로 답하기' })).toBeDisabled();
   fireEvent.click(retry);
@@ -141,6 +143,7 @@ it('추천은 키워드부터 공개하고 재추천은 추가 호출 없이 같
   expect(screen.getByRole('button', { name: '마이크로 답하기' })).toBeEnabled();
   fireEvent.click(screen.getByRole('button', { name: '재추천 · 문장 보기' }));
   expect(screen.getByText('I would like a latte, please.')).toBeInTheDocument();
+  expect(screen.queryByText('would like')).not.toBeInTheDocument();
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(mocks.speak).toHaveBeenCalledTimes(1);
   act(() => mocks.transcript('Tea, please.'));
@@ -193,7 +196,7 @@ it('사용자 다시 듣기는 현재 표시된 수정 발화를 TTS로 재생�
   const userButton = () => screen.getByText(/음성 인식 결과|수정한 발화/).closest('article')!.querySelector<HTMLButtonElement>('.message-actions button')!;
   fireEvent.click(userButton());
   expect(mocks.speak).toHaveBeenLastCalledWith('A latte.');
-  fireEvent.click(screen.getByText('수정하기'));
+  fireEvent.click(screen.getByRole('button', { name: '수정하기' }));
   fireEvent.change(screen.getByLabelText('발화 수정'), { target: { value: 'Tea, please.' } });
   fireEvent.click(screen.getByText('수정 완료'));
   await waitFor(() => expect(mocks.speak).toHaveBeenLastCalledWith('Tea?'));

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import IconButton from './IconButton';
 import { deleteExpression, expressionKey, lookupExpression, readExpressions, saveExpression, VOCAB_KEY, type Expression } from './vocabulary';
 
 type Pick = { text: string; example: string; element: HTMLElement; source: Expression['source']; x: number; y: number };
@@ -14,6 +15,8 @@ export default function ExpressionTools({ sessionId, scenarioId, open, onClose }
   const [lookupErrors, setLookupErrors] = useState<Record<string, string>>({});
   const [listError, setListError] = useState('');
   const [sort, setSort] = useState('alphabet');
+  const [hiddenMeanings, setHiddenMeanings] = useState<Record<string, boolean>>({});
+  const [hiddenTranslations, setHiddenTranslations] = useState<Record<string, boolean>>({});
   const menu = useRef<HTMLDivElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const busy = useRef(false);
@@ -106,10 +109,23 @@ export default function ExpressionTools({ sessionId, scenarioId, open, onClose }
     </div>, document.body)}
     {notice && createPortal(<div className="expression-notice" role="status">{notice}</div>, document.body)}
     <dialog ref={dialog} className="vocabulary-dialog" aria-labelledby="vocabulary-title" onCancel={onClose}>
-      <header><h2 id="vocabulary-title">내 단어장</h2><button onClick={onClose} aria-label="단어장 닫기">닫기</button></header>
-      <p>이 브라우저에 저장한 표현과 저장 당시 문장이에요.</p>
-      <label>정렬 <select value={sort} onChange={event => setSort(event.target.value)}><option value="alphabet">알파벳순</option><option value="latest">최신순</option></select></label>
-      {listError ? <p role="alert">{listError}</p> : sorted.length ? <ul>{sorted.map(item => <li key={item.id}><strong lang="en">{item.expression}</strong>{item.details && <><small className="vocabulary-pos">{item.details.partOfSpeech}</small><p>{item.details.meaningKo}</p></>}<p lang="en">{item.example}</p>{item.details ? <p lang="ko" className="vocabulary-translation">{item.details.exampleKo}</p> : <><button disabled={lookingUp.includes(item.id)} onClick={() => lookup(item.id)}>{lookingUp.includes(item.id) ? '뜻을 불러오는 중…' : '뜻 불러오기'}</button>{lookupErrors[item.id] && <p role="alert">{lookupErrors[item.id]}</p>}</>}<button onClick={() => remove(item.id)} aria-label={`${item.expression} 삭제`}>삭제</button></li>)}</ul> : <p>아직 저장한 표현이 없어요. 말풍선의 영어를 드래그해 보세요.</p>}
+      <header className="vocabulary-header">
+        <h2 id="vocabulary-title">내 단어장</h2>
+        <button className="vocabulary-close" onClick={onClose} aria-label="단어장 닫기" title="닫기"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+        <p className="vocabulary-description">이 브라우저에 저장한 표현과 저장 당시 문장이에요.</p>
+        <label className="vocabulary-sort"><select aria-label="정렬" value={sort} onChange={event => setSort(event.target.value)}><option value="alphabet">알파벳순</option><option value="latest">최신순</option></select></label>
+      </header>
+      {listError ? <p role="alert">{listError}</p> : sorted.length ? <ul>{sorted.map(item => <li key={item.id}>
+        <div className="vocabulary-item-heading"><div className="vocabulary-term"><strong lang="en">{item.expression}</strong>{item.details && !hiddenMeanings[item.id] && <span lang="ko" className="vocabulary-meaning"> | {item.details.meaningKo}</span>}</div><button className="vocabulary-delete" onClick={() => remove(item.id)} aria-label={`${item.expression} 삭제`}>삭제</button></div>
+        {item.details && <div className="vocabulary-part-of-speech"><small className="vocabulary-pos">{item.details.partOfSpeech}</small><IconButton label="단어 뜻" aria-expanded={!hiddenMeanings[item.id]} onClick={() => setHiddenMeanings(current => ({ ...current, [item.id]: !current[item.id] }))}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 5h12M9 2v3M5 5c1 5 4 8 8 10M13 5c-1 5-4 8-9 11M14 21l4-10 4 10M15.5 17h5"/></svg></IconButton></div>}
+        <p className="vocabulary-example"><span lang="en">{item.example}</span>{' '}<IconButton label="한글 번역" aria-expanded={!!item.details && !hiddenTranslations[item.id]} disabled={lookingUp.includes(item.id)} onClick={() => {
+          if (item.details) setHiddenTranslations(current => ({ ...current, [item.id]: !current[item.id] }));
+          else { setHiddenTranslations(current => ({ ...current, [item.id]: false })); void lookup(item.id); }
+        }}><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 5h12M9 2v3M5 5c1 5 4 8 8 10M13 5c-1 5-4 8-9 11M14 21l4-10 4 10M15.5 17h5"/></svg></IconButton></p>
+        {item.details ? !hiddenTranslations[item.id] && <p lang="ko" className="vocabulary-translation">{item.details.exampleKo}</p> : <button disabled={lookingUp.includes(item.id)} onClick={() => lookup(item.id)}>{lookingUp.includes(item.id) ? '뜻을 불러오는 중…' : '뜻 불러오기'}</button>}
+        {lookupErrors[item.id] && <p role="alert">{lookupErrors[item.id]}</p>}
+      </li>)}</ul> : <p>아직 저장한 표현이 없어요. 말풍선의 영어를 드래그해 보세요.</p>}
+
     </dialog>
   </>;
 }

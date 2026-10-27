@@ -89,6 +89,20 @@ it('기존 저장 항목의 뜻을 조회하고 캐시하며 최초 원문과 �
   render(<ExpressionTools sessionId="home" scenarioId="cafe-order" open={true} onClose={vi.fn()} />);
   expect(await screen.findByText('명사')).toBeInTheDocument();
   expect(screen.getByText('라테 한 잔 주세요.')).toBeInTheDocument();
+  const meaningToggle = screen.getByRole('button', { name: '단어 뜻', hidden: true });
+  expect(meaningToggle).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.click(meaningToggle);
+  expect(screen.queryByText(`| ${details.meaningKo}`)).not.toBeInTheDocument();
+  expect(screen.getByText('라테 한 잔 주세요.')).toBeInTheDocument();
+  fireEvent.click(meaningToggle);
+  expect(screen.getByText(`| ${details.meaningKo}`)).toBeInTheDocument();
+  const toggle = screen.getByRole('button', { name: '한글 번역', hidden: true });
+  fireEvent.click(toggle);
+  expect(screen.queryByText('라테 한 잔 주세요.')).not.toBeInTheDocument();
+  expect(screen.getByText('A latte, please.')).toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(screen.getByText('라테 한 잔 주세요.')).toBeInTheDocument();
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });
 it('조회 실패에도 표현을 유지하고 재시도할 수 있다', async () => {
   await saveExpression('latte', 'A latte, please.', source);
