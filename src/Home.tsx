@@ -25,7 +25,7 @@ export default function Home({ onStart, resume, disabled = false }: { onStart: (
       <div className="sidebar-label">오늘의 대화</div>
       <div className="current-scene"><span aria-hidden="true">{selected.emoji}</span><div>{selected.title}<small>{selected.place} · 영어 연습</small></div><span className="active-dot" /></div>
       <div className="scene-guide"><span className="eyebrow">YOUR SCENE</span><h2>오늘의 장면을<br/>골라보세요.</h2><p>장소를 고르고 상황을 확인한 뒤<br/>나만의 속도로 대화를 시작하세요.</p><div className="guide-tags"><span>{selected.place}</span></div></div>
-      <div className="sidebar-bottom"><img src="/sayscene-logo.png" alt="SayScene 말풍선 친구"/><p>완벽하지 않아도 괜찮아요.<br/>한 장면씩, 나만의 속도로.</p><a href="#demo">연결 확인 화면 ↗</a></div>
+      <div className="sidebar-bottom"><img src="/sayscene-logo.png" alt="SayScene 말풍선 친구"/><p>완벽하지 않아도 괜찮아요.<br/>한 장면씩, 나만의 속도로.</p></div>
     </aside>
     <main className="home-main">
     <header className="home-header"><span className="home-page-label">영어 대화 연습</span><a className="wordmark home-mobile-logo" href="#home">Say<span>Scene</span><i>●</i></a><nav aria-label="학습 기록"><a href="#reports">Report 다시보기</a><button onClick={() => setVocabularyOpen(true)}>단어장</button></nav></header>
