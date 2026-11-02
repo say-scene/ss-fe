@@ -27,7 +27,9 @@ it('완성된 응답을 자동으로 읽고 원문은 클릭 후 공개한다', 
   await waitFor(() => expect(synth.speak).toHaveBeenCalledTimes(1));
   expect(spoken[0].text).toBe('Welcome! What would you like?');
   expect(spoken[0].lang).toBe('en-US');
-  expect(screen.queryByText('Welcome! What would you like?')).not.toBeInTheDocument();
+  expect(screen.getByText('Welcome! What would you like?')).toHaveClass('hidden-sentence');
+  expect(screen.getByText('Welcome! What would you like?')).toHaveAttribute('aria-hidden', 'true');
+  expect(screen.queryByText('원문 보기 ↗')).not.toBeInTheDocument();
   act(() => spoken[0].onstart?.());
   expect(screen.getByText('바리스타가 말하고 있어요')).toBeInTheDocument();
   act(() => spoken[0].onend?.());
@@ -70,4 +72,35 @@ it('TTS 미지원 브라우저에서도 원문을 확인할 수 있다', async (
   expect(await screen.findByRole('alert')).toHaveTextContent('음성 재생을 지원하지');
   fireEvent.click(screen.getByRole('button', { name: '영어 원문 보기' }));
   expect(screen.getByText('Welcome! What would you like?')).toBeInTheDocument();
+});
+
+it('일시정지 화면은 말풍선을 유지하고 이어하기 전에는 입력과 자동 생성을 막는다', async () => {
+  const local: import('./conversation').LocalConversation = {
+    schemaVersion: 1, pending: null,
+    ui: { revealed: ['a'], suggestions: {}, lockedUserId: null },
+    active: { sessionId: 'saved', scenarioId: 'cafe-order', version: 1, lastRequestId: null, pending: null,
+      messages: [{ id: 'a', role: 'assistant', text: 'Welcome back!' }, { id: 'u', role: 'user', text: 'A latte, please.' }] },
+  };
+  const resume = vi.fn();
+  const exit = vi.fn();
+  const view = render(<ChatRoom autoStart paused={{ local, onResume: resume, busy: false }} onExit={exit} />);
+  await act(async () => {});
+  expect(screen.getByText('대화 일시정지')).toBeInTheDocument();
+  expect(screen.getByText('Welcome back!').closest('.chat-bubble')).toBeTruthy();
+  expect(screen.getByText('A latte, please.').closest('.chat-bubble')).toBeTruthy();
+  for (const name of ['마이크로 답하기', '수정하기', '새 인사 듣기', '답변 추천 ✦']) {
+    expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  }
+  expect(fetch).not.toHaveBeenCalled();
+  expect(synth.speak).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '이어서 대화하기' }));
+  expect(resume).toHaveBeenCalledTimes(1);
+  view.rerender(<ChatRoom paused={{ local: { ...local, active: { ...local.active!, messages: [...local.active!.messages, { id: 'b', role: 'assistant', text: 'Hot or iced?' }] } }, onResume: resume, busy: true }} onExit={exit} />);
+  expect(screen.getByRole('button', { name: '대화를 연결하고 있어요…' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: '영어 원문 보기' }));
+  expect(screen.getByText('Hot or iced?')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '대화 메뉴' }));
+  expect(screen.queryByRole('button', { name: '대화 종료' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '메인으로' }));
+  expect(exit).toHaveBeenCalledTimes(1);
 });
