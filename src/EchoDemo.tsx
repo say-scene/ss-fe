@@ -1,3 +1,4 @@
+import { startAction, tracedFetch } from './telemetry';
 import { useRef, useState, type FormEvent } from 'react';
 
 type Echo = { message: string; source: string; receivedAt: string };
@@ -12,11 +13,12 @@ export default function EchoDemo() {
     if (pending.current || !message.trim()) return;
     pending.current = true;
     setBusy(true); setError(''); setResult(null);
+    const action = startAction('demo.echo');
     try {
-      const response = await fetch('/api/v1/demo/echo', {
+      const response = await tracedFetch('/api/v1/demo/echo', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }), signal: AbortSignal.timeout(10000),
-      });
+      }, action);
       if (!response.ok) throw new Error('HTTP error');
       const data: unknown = await response.json();
       if (!data || typeof data !== 'object'
@@ -25,8 +27,9 @@ export default function EchoDemo() {
         || !('receivedAt' in data) || typeof data.receivedAt !== 'string') throw new Error('Invalid response');
       setResult({ message: data.message, source: data.source, receivedAt: data.receivedAt });
     } catch {
+      action.setError();
       setError('백엔드 연결을 확인해주세요. 서버를 실행한 뒤 다시 보낼 수 있어요.');
-    } finally { pending.current = false; setBusy(false); }
+    } finally { action.end(); pending.current = false; setBusy(false); }
   }
   return <section className="echo-demo" aria-labelledby="echo-title">
     <div><span className="eyebrow">LOCAL DEMO</span><h2 id="echo-title">프론트 → 백엔드 → 프론트</h2><p>보낸 문장을 Spring Boot가 그대로 돌려줍니다. AI 서버 없이 확인할 수 있어요.</p></div>

@@ -17,11 +17,11 @@ it('STT 입력 후 전체 이력으로 답변을 받고 다음 녹음까지 이�
   render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledWith('Welcome!'));
-  act(() => mocks.transcript('A latte, please.'));
+  act(() => { mocks.transcript('A latte, please.'); });
   expect(screen.getByText('A latte, please.')).toBeInTheDocument();
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledWith('Hot or iced?'));
   expect(screen.getByRole('button', { name: '마이크로 답하기' })).toBeEnabled();
-  act(() => mocks.transcript('Hot, please.'));
+  act(() => { mocks.transcript('Hot, please.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledWith('What size?'));
   const body = JSON.parse(fetcher.mock.calls[2][1].body);
   expect(body.scenarioId).toBe('cafe-order');
@@ -37,7 +37,7 @@ it('실패한 답변은 사용자 발화를 중복 추가하지 않고 같은 �
   render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte, please.'));
+  act(() => { mocks.transcript('A latte, please.'); });
   const retry = await screen.findByRole('button', { name: '답변 다시 받기' });
   expect(screen.getByRole('button', { name: '마이크로 답하기' })).toBeDisabled();
   fireEvent.click(retry);
@@ -51,7 +51,7 @@ it('화면 이탈 뒤 늦게 완료된 다음 답변을 재생하지 않는다',
   const { unmount } = render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   expect(screen.getByRole('button', { name: '마이크로 답하기' })).toBeDisabled();
   unmount();
   await act(async () => resolve(reply('Late reply')));
@@ -64,7 +64,7 @@ it('수정하면 이전 AI 답변을 제거하고 수정 문장으로 재생성�
   render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   fireEvent.click(screen.getAllByRole('button', { name: '영어 원문 보기' })[1]);
   fireEvent.click(screen.getByRole('button', { name: '수정하기' }));
@@ -86,7 +86,7 @@ it('빈 수정은 저장하지 않고 취소하면 원문과 기존 답변을 �
   render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   fireEvent.click(screen.getByRole('button', { name: '수정하기' }));
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '  ' } });
@@ -102,7 +102,7 @@ it('수정 응답 실패 후 재시도에도 수정한 문맥을 유지한다', 
   render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   fireEvent.click(screen.getByRole('button', { name: '수정하기' }));
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'An iced tea.' } });
@@ -117,14 +117,14 @@ it('후속 녹음이 시작되면 이전 발화의 수정을 잠근다', async (
   const { rerender } = render(<ChatRoom />);
   fireEvent.click(screen.getByRole('button', { name: '대화 시작하기' }));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   expect(screen.getByRole('button', { name: '수정하기' })).toBeEnabled();
   mocks.state = 'recording'; rerender(<ChatRoom />);
   expect(screen.queryByRole('button', { name: '수정하기' })).not.toBeInTheDocument();
   mocks.state = 'idle'; rerender(<ChatRoom />);
   expect(screen.queryByRole('button', { name: '수정하기' })).not.toBeInTheDocument();
-  act(() => mocks.transcript('Small.'));
+  act(() => { mocks.transcript('Small.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(3));
   expect(screen.getAllByRole('button', { name: '수정하기' })).toHaveLength(1);
 });
@@ -143,7 +143,7 @@ it('추천은 키워드부터 공개하고 재추천은 추가 호출 없이 같
   expect(screen.getByText('I would like a latte, please.')).toBeInTheDocument();
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(mocks.speak).toHaveBeenCalledTimes(1);
-  act(() => mocks.transcript('Tea, please.'));
+  act(() => { mocks.transcript('Tea, please.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   expect(JSON.parse(fetcher.mock.calls[2][1].body).messages).toEqual([
     { role: 'assistant', content: 'Welcome!' }, { role: 'user', content: 'Tea, please.' },
@@ -156,7 +156,7 @@ it('키워드만 보고 답하면 예문을 나중에 공개하지 않는다', a
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole('button', { name: '답변 추천 ✦' }));
   await screen.findByText('would like');
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   expect(screen.getByText('would like')).toBeInTheDocument();
   expect(screen.queryByText('I would like a latte, please.')).not.toBeInTheDocument();
@@ -188,7 +188,7 @@ it('사용자 다시 듣기는 현재 표시된 수정 발화를 TTS로 재생�
   render(<ChatRoom />);
   fireEvent.click(screen.getByText('대화 시작하기'));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   const userButton = () => screen.getByText(/음성 인식 결과|수정한 발화/).closest('article')!.querySelector<HTMLButtonElement>('.message-actions button')!;
   fireEvent.click(userButton());

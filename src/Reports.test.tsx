@@ -59,7 +59,7 @@ async function converse(fetcher: ReturnType<typeof vi.fn>) {
   await waitFor(() => expect(screen.getByText('시작하기 →')).toBeEnabled());
   fireEvent.click(screen.getByText('시작하기 →'));
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(1));
-  act(() => mocks.transcript('A latte.'));
+  act(() => { mocks.transcript('A latte.'); });
   await waitFor(() => expect(mocks.speak).toHaveBeenCalledTimes(2));
   fireEvent.click(screen.getByLabelText('대화 메뉴'));
   fireEvent.click(screen.getByText('대화 종료'));

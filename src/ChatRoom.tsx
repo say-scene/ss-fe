@@ -1,3 +1,4 @@
+import { startAction, tracedFetch, type TraceAction } from './telemetry';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { useSpeech } from './useSpeech';
 import { useRecorder } from './useRecorder';
@@ -12,7 +13,7 @@ import { scenarios, type Scenario } from './scenarios';
 type Suggestion = { keywords: string[]; sentence: string; expanded: boolean };
 
 type Message = { id: string; text: string; role: 'assistant' | 'user'; revision?: number; mode?: 'mock' | 'live' | 'preset' };
-type Managed = { local: LocalConversation; generate: (history: Message[]) => Promise<Message[]>; saveUi: (ui: ConversationUi) => void;
+type Managed = { local: LocalConversation; generate: (history: Message[], action?: TraceAction) => Promise<Message[]>; saveUi: (ui: ConversationUi) => void;
   registerCleanup: (cleanup: (() => void) | null) => void; restart: () => void };
 export default function ChatRoom({ managed, scenario = scenarios[0], autoStart = false, onEnd, onExit = () => { window.location.hash = '#home'; } }: { scenario?: Scenario; autoStart?: boolean; onExit?: () => void; onEnd?: (snapshot: ReportSnapshot) => void; managed?: Managed }) {
   const SCENARIO_ID = scenario.id;
@@ -38,12 +39,12 @@ export default function ChatRoom({ managed, scenario = scenarios[0], autoStart =
   const lastUser = [...messages].reverse().find(m => m.role === 'user');
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const microphone = useRecorder(text => {
+  const microphone = useRecorder((text, action) => {
     if (editingId || request.current || messages.at(-1)?.role !== 'assistant') return;
     cancelSuggestion();
     const history: Message[] = [...messages, { id: crypto.randomUUID(), text, role: 'user', revision: 1 }];
     setMessages(history);
-    void generate(history);
+    return generate(history, action);
   });
   const recordingBusy = microphone.state !== 'idle';
   useEffect(() => {
@@ -100,50 +101,54 @@ export default function ChatRoom({ managed, scenario = scenarios[0], autoStart =
     const controller = new AbortController(); suggestionRequest.current = controller;
     setSuggesting(true); setSuggestionError('');
     const timeout = setTimeout(() => controller.abort(), 190000);
+    const action = startAction('suggestion');
     try {
-      const response = await fetch('/api/v1/demo/cafe/suggestion', { method: 'POST', signal: controller.signal,
+      const response = await tracedFetch('/api/v1/demo/cafe/suggestion', { method: 'POST', signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenarioId: SCENARIO_ID, messages: messages.map(m => ({ role: m.role, content: m.text })) }) });
+        body: JSON.stringify({ scenarioId: SCENARIO_ID, messages: messages.map(m => ({ role: m.role, content: m.text })) }) }, action);
       const data = await response.json();
       if (!response.ok || typeof data?.sentence !== 'string' || !data.sentence.trim() || !Array.isArray(data.keywords)
           || !data.keywords.length || !data.keywords.every((k: unknown) => typeof k === 'string' && k.trim())) throw new Error('invalid suggestion');
-      if (suggestionRequest.current !== controller || controller.signal.aborted) return;
+      if (suggestionRequest.current !== controller || controller.signal.aborted) { action.setError('aborted'); return; }
       setSuggestions(current => ({ ...current, [targetId]: { sentence: data.sentence.trim(), keywords: data.keywords, expanded: false } }));
     } catch {
+      action.setError(controller.signal.aborted ? 'aborted' : 'request_failed');
       if (suggestionRequest.current === controller) setSuggestionError('추천을 불러오지 못했어요. 다시 요청하거나 마이크로 바로 답해주세요.');
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(timeout); action.end();
       if (suggestionRequest.current === controller) { suggestionRequest.current = null; setSuggesting(false); }
     }
   }
-  async function generate(history: Message[]) {
+  async function generate(history: Message[], parent?: TraceAction) {
     if (request.current) return;
     stop(); setError(''); setLoading(true);
     const controller = new AbortController();
     request.current = controller;
     const timeout = setTimeout(() => controller.abort(), managed ? 245000 : 190000);
+    const action = parent ?? startAction(managed ? 'conversation.turn' : history.length ? 'conversation.reply' : 'demo.cafe');
     try {
       if (managed) {
-        const next = await managed.generate(history);
-        if (request.current !== controller || controller.signal.aborted) return;
+        const next = await managed.generate(history, action);
+        if (request.current !== controller || controller.signal.aborted) { action.setError('aborted'); return; }
         setMessages(next);
         const last = next.at(-1)!; setSpeakingId(last.id); speak(last.text);
         return;
       }
-      const response = await fetch(history.length ? '/api/v1/demo/cafe/reply' : `/api/v1/demo/cafe?scenarioId=${SCENARIO_ID}`, { method: 'POST', signal: controller.signal, ...(history.length ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioId: SCENARIO_ID, messages: history.map(m => ({ role: m.role, content: m.text })) }) } : {}) });
+      const response = await tracedFetch(history.length ? '/api/v1/demo/cafe/reply' : `/api/v1/demo/cafe?scenarioId=${SCENARIO_ID}`, { method: 'POST', signal: controller.signal, ...(history.length ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scenarioId: SCENARIO_ID, messages: history.map(m => ({ role: m.role, content: m.text })) }) } : {}) }, action);
       if (!response.ok) throw new Error('request failed');
       const data: unknown = await response.json();
       if (!data || typeof data !== 'object' || !('text' in data) || typeof data.text !== 'string' || !data.text.trim()
         || !('mode' in data) || (data.mode !== 'mock' && data.mode !== 'live')) throw new Error('invalid response');
-      if (request.current !== controller || controller.signal.aborted) return;
+      if (request.current !== controller || controller.signal.aborted) { action.setError('aborted'); return; }
       const id = crypto.randomUUID();
       setMessages([...history, { id, text: data.text.trim(), role: 'assistant', mode: data.mode }]);
       setSpeakingId(id);
       speak(data.text.trim());
     } catch (e) {
+      action.setError(controller.signal.aborted ? 'aborted' : 'request_failed');
       if (request.current === controller) setError(managed && e instanceof Error && /[가-힣]/.test(e.message) ? e.message : '대화에 연결하지 못했어요. 서버 연결을 확인하고 다시 시도해주세요.');
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(timeout); if (!parent) action.end();
       if (request.current === controller) { request.current = null; setLoading(false); }
     }
   }

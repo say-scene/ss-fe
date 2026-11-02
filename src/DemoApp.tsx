@@ -1,3 +1,4 @@
+import { startAction, tracedFetch } from './telemetry';
 import EchoDemo from './EchoDemo';
 import { useRef, useState } from 'react';
 
@@ -12,8 +13,9 @@ export default function DemoApp() {
     if (pending.current) return;
     pending.current = true;
     setBusy(true); setError(''); setReply(null); setRevealed(false);
+    const action = startAction('demo.cafe');
     try {
-      const response = await fetch('/api/v1/demo/cafe', { method: 'POST', signal: AbortSignal.timeout(60000) });
+      const response = await tracedFetch('/api/v1/demo/cafe', { method: 'POST', signal: AbortSignal.timeout(60000) }, action);
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         if (body.code === 'INFERENCE_NOT_CONFIGURED') throw new Error('아직 대화를 준비 중이에요. 잠시 후 다시 시도해주세요.');
@@ -25,8 +27,9 @@ export default function DemoApp() {
         || !('mode' in data) || (data.mode !== 'mock' && data.mode !== 'live')) throw new Error('답변을 받지 못했어요. 다시 시도해주세요.');
       setReply({ text: data.text, mode: data.mode });
     } catch (e) {
+      action.setError();
       setError(e instanceof Error && e.message.endsWith('주세요.') ? e.message : '대화에 연결하지 못했어요. 잠시 후 다시 시도해주세요.');
-    } finally { pending.current = false; setBusy(false); }
+    } finally { action.end(); pending.current = false; setBusy(false); }
   }
   return <div className="page">
     <header><a className="wordmark" href="/" aria-label="SayScene 홈">Say<span>Scene</span><i>●</i></a><span className="header-note">영어가 경험이 되는 순간</span><span className="preview-tag">미리보기</span></header>
