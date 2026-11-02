@@ -1,3 +1,4 @@
+import { startAction, tracedFetch } from './telemetry';
 import { useEffect, useRef, useState } from 'react';
 import ChatRoom from './ChatRoom';
 import Home from './Home';
@@ -38,12 +39,13 @@ export default function App() {
     const createdAt = new Date().toISOString();
     navigate('#report');
     const timeout = setTimeout(() => controller.abort(), 190000);
+    const action = startAction('report');
     try {
-      const response = await fetch('/api/v1/report', { method: 'POST', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snapshot) });
+      const response = await tracedFetch('/api/v1/report', { method: 'POST', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(snapshot) }, action);
       const data = await response.json();
       if (!response.ok || !validReview(data, snapshot)) throw new Error('invalid report');
-      if (reportRequest.current !== controller || controller.signal.aborted) return;
+      if (reportRequest.current !== controller || controller.signal.aborted) { action.setError('aborted'); return; }
       const scenario = scenarios.find(item => item.id === snapshot.scenarioId)!;
       const date = new Date(createdAt);
       const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -51,8 +53,9 @@ export default function App() {
       setReport({ schemaVersion: 1, id: crypto.randomUUID(), title: `${scenario.place} · ${scenario.situation} · ${day} · ${time}`,
         createdAt, snapshot, summary: data.summary, turns: data.turns });
     } catch {
+      action.setError(controller.signal.aborted ? 'aborted' : 'request_failed');
       if (reportRequest.current === controller) { setNotice('리포트를 생성하지 못했습니다. 이번 대화는 저장되지 않았습니다.'); navigate('#home'); }
-    } finally { clearTimeout(timeout); if (reportRequest.current === controller) reportRequest.current = null; }
+    } finally { clearTimeout(timeout); action.end(); if (reportRequest.current === controller) reportRequest.current = null; }
   }
   const leaveReport = () => { reportRequest.current?.abort(); reportRequest.current = null; setReport(null); navigate('#home'); };
   if (route === '#reports') return <ReportLibrary onExit={leaveReport} />;

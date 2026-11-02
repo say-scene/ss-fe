@@ -1,3 +1,4 @@
+import { runAction, type TraceAction } from './telemetry';
 import { useEffect, useRef, useState } from 'react';
 import { conversationApi, ConversationError, displayedMessages, emptyConversation, emptyUi, mergeServer, readConversation, reconcile, writeConversation,
   ACTIVE_KEY, type ConversationUi, type LocalConversation, type Message } from './conversation';
@@ -20,9 +21,9 @@ export function useConversation() {
     ownerRef.current = false; setOwner(false); releaseLock.current?.(); releaseLock.current = null;
   }
   function read() { try { setLocal(readConversation()); } catch (e) { setError((e as Error).message); } }
-  async function refresh() {
+  async function refresh(action?: TraceAction) {
     setError('');
-    try { await reconcile(); if (alive.current) { read(); setReady(true); } }
+    try { await reconcile(action); if (alive.current) { read(); setReady(true); } }
     catch (e) { if (alive.current) { read(); setError((e as Error).message); } throw e; }
   }
   useEffect(() => {
@@ -42,7 +43,7 @@ export function useConversation() {
     return () => { alive.current = false; acquireAbort.current?.abort(); release(); bus.close(); channel.current = null;
       window.removeEventListener('storage', storage); window.removeEventListener('sayscene-conversation', read); };
   }, []);
-  async function acquire() {
+  async function acquire(action: TraceAction) {
     if (ownerRef.current) return;
     if (!navigator.locks) throw new Error('이 브라우저는 대화 사용권 동기화를 지원하지 않아요.');
     acquireAbort.current?.abort();
@@ -59,62 +60,68 @@ export function useConversation() {
           await new Promise<void>(done => { releaseLock.current = done; });
         }).catch(reject);
       });
-      try { await refresh(); } catch (e) { release(); throw e; }
+      try { await refresh(action); } catch (e) { release(); throw e; }
       if (!ownerRef.current) throw new Error('다른 탭으로 대화 사용권이 이동했어요.');
       setOwner(true);
     } finally { clearInterval(interval); setAcquiring(false); }
   }
   async function resume() {
-    setError('');
-    try { await acquire(); return true; } catch (e) { setError((e as Error).message); release(); return false; }
+    return runAction('conversation.resume', async action => {
+      setError('');
+      try { await acquire(action); return true; } catch (e) { action.setError(); setError((e as Error).message); release(); return false; }
+    });
   }
   async function start(scenarioId: string) {
-    setError('');
-    try {
-      await acquire();
-      const current = readConversation();
-      const starting = { sessionId: crypto.randomUUID(), scenarioId, expectedSessionId: current.active?.sessionId ?? null };
-      // 쓰기 실패하면 서버의 기존 대화를 삭제하지 않는다.
-      writeConversation({ ...current, starting });
-      const state = await conversationApi('/start', starting);
-      writeConversation(mergeServer(emptyConversation(), state));
-      return true;
-    } catch (e) { setError((e as Error).message); release(); return false; }
+    return runAction('conversation.start', async action => {
+      setError('');
+      try {
+        await acquire(action);
+        const current = readConversation();
+        const starting = { sessionId: crypto.randomUUID(), scenarioId, expectedSessionId: current.active?.sessionId ?? null };
+        // 쓰기 실패하면 서버의 기존 대화를 삭제하지 않는다.
+        writeConversation({ ...current, starting });
+        const state = await conversationApi('/start', starting, undefined, action);
+        writeConversation(mergeServer(emptyConversation(), state));
+        return true;
+      } catch (e) { action.setError(); setError((e as Error).message); release(); return false; }
+    });
   }
-  async function generate(history: Message[]) {
-    if (!ownerRef.current) throw new Error('다른 탭에서 대화 중입니다.');
-    let current = readConversation(); const active = current.active;
-    if (!active) throw new Error('진행 중인 대화가 없습니다.');
-    const last = history.at(-1);
-    const edit = !!last && active.messages.some(m => m.id === last.id);
-    const turn = current.pending ?? { sessionId: active.sessionId, requestId: crypto.randomUUID(), expectedVersion: active.version,
-      message: last?.role === 'user' ? { ...last, revision: last.revision ?? 1 } : null, edit };
-    current = { ...current, pending: turn }; writeConversation(current);
-    const controller = new AbortController(); request.current = controller;
-    const timeout = setTimeout(() => controller.abort(), 240000);
-    try {
-      for (;;) {
-        try {
-          const state = await conversationApi('/turn', turn, controller.signal);
-          if (!ownerRef.current || controller.signal.aborted) throw new Error('사용권이 이동했습니다.');
-          const next = mergeServer(readConversation(), state); writeConversation(next);
-          return next.active!.messages;
-        } catch (e) {
-          if (!(e instanceof ConversationError) || e.status !== 409 || controller.signal.aborted) throw e;
-          const state = await conversationApi('', undefined, controller.signal);
-          if (state.active?.sessionId !== turn.sessionId) throw new Error('대화가 다른 탭에서 종료되거나 변경됐어요.');
-          if (state.active.lastRequestId === turn.requestId) {
-            writeConversation(mergeServer(readConversation(), state)); return state.active.messages;
+  async function generate(history: Message[], parent?: TraceAction) {
+    return runAction('conversation.turn', async action => {
+      if (!ownerRef.current) throw new Error('다른 탭에서 대화 중입니다.');
+      let current = readConversation(); const active = current.active;
+      if (!active) throw new Error('진행 중인 대화가 없습니다.');
+      const last = history.at(-1);
+      const edit = !!last && active.messages.some(m => m.id === last.id);
+      const turn = current.pending ?? { sessionId: active.sessionId, requestId: crypto.randomUUID(), expectedVersion: active.version,
+        message: last?.role === 'user' ? { ...last, revision: last.revision ?? 1 } : null, edit };
+      current = { ...current, pending: turn }; writeConversation(current);
+      const controller = new AbortController(); request.current = controller;
+      const timeout = setTimeout(() => controller.abort(), 240000);
+      try {
+        for (;;) {
+          try {
+            const state = await conversationApi('/turn', turn, controller.signal, action);
+            if (!ownerRef.current || controller.signal.aborted) throw new Error('사용권이 이동했습니다.');
+            const next = mergeServer(readConversation(), state); writeConversation(next);
+            return next.active!.messages;
+          } catch (e) {
+            if (!(e instanceof ConversationError) || e.status !== 409 || controller.signal.aborted) throw e;
+            const state = await conversationApi('', undefined, controller.signal, action);
+            if (state.active?.sessionId !== turn.sessionId) throw new Error('대화가 다른 탭에서 종료되거나 변경됐어요.');
+            if (state.active.lastRequestId === turn.requestId) {
+              writeConversation(mergeServer(readConversation(), state)); return state.active.messages;
+            }
+            if (state.active.version !== turn.expectedVersion) { writeConversation(mergeServer(readConversation(), state)); throw new Error('다른 탭의 최신 대화를 다시 열어주세요.'); }
+            await new Promise<void>((resolve, reject) => {
+              const abort = () => { clearTimeout(timer); reject(new Error('요청이 취소됐어요.')); };
+              const timer = setTimeout(() => { controller.signal.removeEventListener('abort', abort); resolve(); }, 1000);
+              controller.signal.addEventListener('abort', abort, { once: true });
+            });
           }
-          if (state.active.version !== turn.expectedVersion) { writeConversation(mergeServer(readConversation(), state)); throw new Error('다른 탭의 최신 대화를 다시 열어주세요.'); }
-          await new Promise<void>((resolve, reject) => {
-            const abort = () => { clearTimeout(timer); reject(new Error('요청이 취소됐어요.')); };
-            const timer = setTimeout(() => { controller.signal.removeEventListener('abort', abort); resolve(); }, 1000);
-            controller.signal.addEventListener('abort', abort, { once: true });
-          });
         }
-      }
-    } finally { clearTimeout(timeout); if (request.current === controller) request.current = null; }
+      } finally { clearTimeout(timeout); if (request.current === controller) request.current = null; }
+    }, parent);
   }
   function saveUi(ui: ConversationUi) {
     if (!ownerRef.current) return;
@@ -122,14 +129,16 @@ export function useConversation() {
     catch { setError('대화를 브라우저에 저장하지 못했어요. 저장 공간을 확인해주세요.'); release(); }
   }
   async function end() {
-    if (!ownerRef.current) return false;
-    setError('');
-    try {
-      const current = readConversation(); if (!current.active) return false;
-      writeConversation({ ...current, ending: current.active.sessionId });
-      await conversationApi('/end', { sessionId: current.active.sessionId });
-      writeConversation(emptyConversation()); release(); return true;
-    } catch (e) { setError((e as Error).message); release(); return false; }
+    return runAction('conversation.end', async action => {
+      if (!ownerRef.current) return false;
+      setError('');
+      try {
+        const current = readConversation(); if (!current.active) return false;
+        writeConversation({ ...current, ending: current.active.sessionId });
+        await conversationApi('/end', { sessionId: current.active.sessionId }, undefined, action);
+        writeConversation(emptyConversation()); release(); return true;
+      } catch (e) { action.setError(); setError((e as Error).message); release(); return false; }
+    });
   }
   return { local, messages: displayedMessages(local), ready, owner, error, acquiring, cleanupChat, release, resume, start, generate, saveUi, end, refresh };
 }

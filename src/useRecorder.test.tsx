@@ -28,7 +28,7 @@ it('녹음 종료 후 전사 결과를 전달하고 마이크를 해제한다', 
   act(() => result.current.start());
   await waitFor(() => expect(result.current.state).toBe('recording'));
   now = 3000; act(() => result.current.stopRecording());
-  await waitFor(() => expect(done).toHaveBeenCalledWith('A latte, please.'));
+  await waitFor(() => expect(done).toHaveBeenCalledWith('A latte, please.', expect.objectContaining({ end: expect.any(Function) })));
   expect(stopTrack).toHaveBeenCalled();
   expect(fetch).toHaveBeenCalledWith('/api/v1/stt', expect.objectContaining({ method: 'POST', body: expect.any(FormData) }));
 });

@@ -1,3 +1,4 @@
+import { startAction, tracedFetch } from './telemetry';
 export const VOCAB_KEY = 'sayscene:v1:vocabulary';
 export type ExpressionDetails = { meaningKo: string; partOfSpeech: string; exampleKo: string };
 export type Expression = {
@@ -57,9 +58,10 @@ async function loadDetails(id: string) {
   if (!item || item.details) return;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 190000);
+  const action = startAction('lookup');
   try {
-    const response = await fetch('/api/v1/lookup', { method: 'POST', signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expression: item.expression, example: item.example }) });
+    const response = await tracedFetch('/api/v1/lookup', { method: 'POST', signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expression: item.expression, example: item.example }) }, action);
     const data = await response.json();
     if (!response.ok || data?.expression !== item.expression || data?.example !== item.example || !validDetails(data)) throw new Error('invalid lookup');
     await update(() => {
@@ -70,5 +72,7 @@ async function loadDetails(id: string) {
       target.details = { meaningKo: data.meaningKo.trim(), partOfSpeech: data.partOfSpeech.trim(), exampleKo: data.exampleKo.trim() };
       window.localStorage.setItem(VOCAB_KEY, JSON.stringify(items));
     });
-  } finally { clearTimeout(timeout); }
+  } catch (error) {
+    action.setError(controller.signal.aborted ? 'aborted' : 'request_failed'); throw error;
+  } finally { clearTimeout(timeout); action.end(); }
 }

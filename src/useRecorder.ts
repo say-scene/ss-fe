@@ -1,7 +1,8 @@
+import { startAction, tracedFetch, type TraceAction } from './telemetry';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type RecordingState = 'idle' | 'requesting' | 'recording' | 'transcribing';
-export function useRecorder(onTranscript: (text: string) => void) {
+export function useRecorder(onTranscript: (text: string, action: TraceAction) => void | Promise<void>) {
   const [state, setState] = useState<RecordingState>('idle');
   const [error, setError] = useState('');
   const [seconds, setSeconds] = useState(0);
@@ -10,6 +11,7 @@ export function useRecorder(onTranscript: (text: string) => void) {
   const recorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const upload = useRef<AbortController | null>(null);
+  const actions = useRef(new Set<TraceAction>());
   const releaseLock = useRef<(() => void) | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const callback = useRef(onTranscript); callback.current = onTranscript;
@@ -26,6 +28,8 @@ export function useRecorder(onTranscript: (text: string) => void) {
     }
     recorder.current = null; releaseMedia();
     upload.current?.abort(); upload.current = null;
+    for (const action of actions.current) { action.setError('aborted'); action.end(); }
+    actions.current.clear();
     releaseLock.current?.(); releaseLock.current = null;
   }, [releaseMedia]);
   useEffect(() => dispose, [dispose]);
@@ -72,23 +76,29 @@ export function useRecorder(onTranscript: (text: string) => void) {
           setState('transcribing');
           const controller = new AbortController(); upload.current = controller;
           const timeout = setTimeout(() => controller.abort(), 125000);
+          const action = startAction('speech.turn'); actions.current.add(action);
+          let delivered = false;
           try {
             const form = new FormData();
             const extension = mime.includes('mp4') ? 'mp4' : mime.includes('ogg') ? 'ogg' : 'webm';
             form.append('audio', audio, `speech.${extension}`);
-            const response = await fetch('/api/v1/stt', { method: 'POST', body: form, signal: controller.signal });
+            const response = await tracedFetch('/api/v1/stt', { method: 'POST', body: form, signal: controller.signal }, action);
             const data = await response.json().catch(() => null);
-            if (version !== current.current) return;
+            if (version !== current.current) { action.setError('aborted'); return; }
             if (!response.ok) {
+              action.setError('request_failed');
               finish(data?.code === 'NO_SPEECH' ? '목소리가 들리지 않았어요. 다시 말해주세요.'
                 : response.status === 422 ? '음성을 인식하지 못했어요. 또렷하게 다시 말해주세요.'
                 : '음성 인식 서버에 연결하지 못했어요. 잠시 후 다시 녹음해주세요.'); return;
             }
-            if (typeof data?.text !== 'string' || !data.text.trim()) { finish('목소리가 들리지 않았어요. 다시 말해주세요.'); return; }
-            callback.current(data.text.trim()); finish();
+            if (typeof data?.text !== 'string' || !data.text.trim()) { action.setError('invalid_response'); finish('목소리가 들리지 않았어요. 다시 말해주세요.'); return; }
+            // Release recording resources before waiting for the downstream reply.
+            finish(); clearTimeout(timeout); delivered = true;
+            await callback.current(data.text.trim(), action);
           } catch {
-            finish('음성 인식이 완료되지 않았어요. 연결을 확인하고 다시 녹음해주세요.');
-          } finally { clearTimeout(timeout); }
+            action.setError(controller.signal.aborted ? 'aborted' : 'request_failed');
+            if (!delivered) finish('음성 인식이 완료되지 않았어요. 연결을 확인하고 다시 녹음해주세요.');
+          } finally { clearTimeout(timeout); action.end(); actions.current.delete(action); }
         };
         rec.start(); setState('recording');
         timer.current = setInterval(() => {

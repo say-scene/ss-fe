@@ -1,3 +1,4 @@
+import { startAction, tracedFetch } from './telemetry';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import IconButton from './IconButton';
@@ -19,20 +20,22 @@ export default function Translation({ sessionId, messageId, revision, text, disa
     request.current = controller;
     setLoading(true); setError('');
     const timeout = setTimeout(() => controller.abort(), 190000);
+    const action = startAction('translation');
     try {
-      const response = await fetch('/api/v1/translate', {
+      const response = await tracedFetch('/api/v1/translate', {
         method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, messageId, revision, text }),
-      });
+      }, action);
       const data = await response.json();
       if (!response.ok || typeof data?.text !== 'string' || !data.text.trim()
           || data.sessionId !== sessionId || data.messageId !== messageId || data.revision !== revision) throw new Error('invalid translation');
-      if (request.current !== controller || controller.signal.aborted) return;
+      if (request.current !== controller || controller.signal.aborted) { action.setError('aborted'); return; }
       setTranslation(data.text.trim()); setVisible(true);
     } catch {
+      action.setError(controller.signal.aborted ? 'aborted' : 'request_failed');
       if (request.current === controller) setError('번역하지 못했어요. 다시 눌러주세요.');
     } finally {
-      clearTimeout(timeout);
+      clearTimeout(timeout); action.end();
       if (request.current === controller) { request.current = null; setLoading(false); }
     }
   }

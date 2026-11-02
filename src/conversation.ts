@@ -1,3 +1,4 @@
+import { runAction, tracedFetch, type TraceAction } from './telemetry';
 export type Message = { id: string; text: string; role: 'assistant' | 'user'; revision?: number; mode?: 'mock' | 'live' | 'preset' };
 export type Turn = { sessionId: string; requestId: string; expectedVersion: number; message: Message | null; edit: boolean };
 export type Snapshot = { sessionId: string; scenarioId: string; version: number; messages: Message[]; lastRequestId: string | null; pending: { turn: Turn; expiresAt: number } | null };
@@ -32,9 +33,9 @@ export function displayedMessages(local: LocalConversation): Message[] {
   return messages;
 }
 export class ConversationError extends Error { constructor(public status: number, message: string) { super(message); } }
-export async function conversationApi(path = '', body?: unknown, signal?: AbortSignal): Promise<{ active: Snapshot | null; closed: string[] }> {
-  const response = await fetch(`/api/v1/conversation${path}`, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', signal,
-    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
+export async function conversationApi(path = '', body?: unknown, signal?: AbortSignal, action?: TraceAction): Promise<{ active: Snapshot | null; closed: string[] }> {
+  const response = await tracedFetch(`/api/v1/conversation${path}`, { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', signal,
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) }, action);
   if (!response.ok) throw new ConversationError(response.status, response.status === 503 ? '대화 저장 서버에 연결하지 못했어요. 기록을 보존했으니 연결 후 다시 시도해주세요.' : '대화 상태를 확인하지 못했어요. 다시 연결해주세요.');
   const data = await response.json();
   if (!data || !Array.isArray(data.closed) || (data.active && !Array.isArray(data.active.messages))) throw new Error('대화 서버 응답을 확인하지 못했어요.');
@@ -49,22 +50,24 @@ export function mergeServer(local: LocalConversation, state: { active: Snapshot 
   return { schemaVersion: 1, active, pending, ui: same ? local.ui : emptyUi() };
 }
 // Cookie 발급 및 로컬 복원은 브라우저 전체에서 직렬화한다.
-export async function reconcile() {
-  if (!navigator.locks) throw new Error('대화 동기화를 위해 최신 Chrome 또는 Safari를 사용해주세요.');
-  return navigator.locks.request('sayscene:conversation-bootstrap', async () => {
-    const local = readConversation();
-    let state = await conversationApi();
-    // 네트워크를 기다리는 동안 입력 탭이 저장한 최신 기록을 덮어쓰지 않는다.
-    if (JSON.stringify(readConversation()) !== JSON.stringify(local)) return readConversation();
-    if (local.ending) {
-      if (state.active?.sessionId === local.ending) state = await conversationApi('/end', { sessionId: local.ending });
-    } else if (local.starting) {
-      if (!state.active || state.active.sessionId === local.starting.expectedSessionId)
-        state = await conversationApi('/start', { ...local.starting, expectedSessionId: state.active?.sessionId ?? null });
-    } else if (!state.active && local.active && !state.closed.includes(local.active.sessionId)) {
-      state = await conversationApi('/restore', { ...local.active, pending: null });
-    }
-    if (JSON.stringify(readConversation()) !== JSON.stringify(local)) return readConversation();
-    const next = mergeServer(local, state); writeConversation(next); return next;
-  });
+export async function reconcile(parent?: TraceAction) {
+  return runAction('conversation.sync', async action => {
+    if (!navigator.locks) throw new Error('대화 동기화를 위해 최신 Chrome 또는 Safari를 사용해주세요.');
+    return navigator.locks.request('sayscene:conversation-bootstrap', async () => {
+      const local = readConversation();
+      let state = await conversationApi('', undefined, undefined, action);
+      // 네트워크를 기다리는 동안 입력 탭이 저장한 최신 기록을 덮어쓰지 않는다.
+      if (JSON.stringify(readConversation()) !== JSON.stringify(local)) return readConversation();
+      if (local.ending) {
+        if (state.active?.sessionId === local.ending) state = await conversationApi('/end', { sessionId: local.ending }, undefined, action);
+      } else if (local.starting) {
+        if (!state.active || state.active.sessionId === local.starting.expectedSessionId)
+          state = await conversationApi('/start', { ...local.starting, expectedSessionId: state.active?.sessionId ?? null }, undefined, action);
+      } else if (!state.active && local.active && !state.closed.includes(local.active.sessionId)) {
+        state = await conversationApi('/restore', { ...local.active, pending: null }, undefined, action);
+      }
+      if (JSON.stringify(readConversation()) !== JSON.stringify(local)) return readConversation();
+      const next = mergeServer(local, state); writeConversation(next); return next;
+    });
+  }, parent);
 }
